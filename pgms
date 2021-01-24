@@ -1,0 +1,749 @@
+P1.py
+
+import csv
+with open('training_examples.csv') as csvFile:
+    data = [line[:-1] for line in csv.reader(csvFile) if line[-1] == "Y"]
+print("POSITIVE EXAMPLES ARE:{}".format(data))
+S = ['?']*len(data[0])   # Initializing.
+print("output in each steps are:\n{}".format(S))
+for example in data:
+    i = 0
+    for feature in example:
+        S[i] = feature if S[i] == '?' or S[i] == feature else '?'
+        i += 1
+    print(S)
+
+
+P2.py
+    
+import random
+import csv
+def g_0(n):
+    return ("?",)*n
+
+def s_0(n):
+    return ('?',)*n
+def more_general(h1, h2):
+    more_general_parts = []
+    for x, y in zip(h1, h2):
+        mg = x == "?" or (x != "?" and (x == y or y == "?"))
+        more_general_parts.append(mg)
+    return all(more_general_parts)
+def fulfills(example, hypothesis):
+    ### the implementation is the same as for hypotheses:
+    return more_general(hypothesis, example)
+
+def min_generalizations(h, x):
+    h_new = list(h)
+    for i in range(len(h)):
+        if not fulfills(x[i:i+1], h[i:i+1]):
+            h_new[i] = '?' if h[i] != '?' else x[i]
+    return [tuple(h_new)]
+def min_specializations(h, domains, x):
+    results = []
+    for i in range(len(h)):
+        if h[i] == "?":
+            for val in domains[i]:
+                if x[i] != val:
+                    h_new = h[:i] + (val,) + h[i+1:]
+                    results.append(h_new)
+        elif h[i] != "?":
+            h_new = h[:i] + ('?',) + h[i+1:]
+            results.append(h_new)
+    return results
+with open('training_examples.csv')  as csvFile:
+        examples = [tuple(line) for line in csv.reader(csvFile)]
+def get_domains(examples):
+    d = [set() for i in examples[0]]
+    for x in examples:
+        for i, xi in enumerate(x):
+            d[i].add(xi)
+    return [list(sorted(x)) for x in d]
+get_domains(examples)
+
+
+def candidate_elimination(examples):
+    domains = get_domains(examples)[:-1]
+
+    G = set([g_0(len(domains))])
+    S = set([s_0(len(domains))])
+    i = 0
+    print("\n G[{0}]:".format(i), G)
+    print("\n S[{0}]:".format(i), S)
+    for xcx in examples:
+        i = i + 1 
+        x, cx = xcx[:-1], xcx[-1]  # Splitting data into attributes and decisions
+        if cx == 'Y':  # x is positive example
+            G = {g for g in G if fulfills(x, g)}
+            S = generalize_S(x, G, S)
+        else:  # x is negative example
+            S = {s for s in S if not fulfills(x, s)}
+            G = specialize_G(x, domains, G, S)
+        print("\n G[{0}]:".format(i), G)
+        print("\n S[{0}]:".format(i), S)
+    return
+def generalize_S(x, G, S):
+    S_prev = list(S)
+    for s in S_prev:
+        if s not in S:
+            continue
+        if not fulfills(x, s):
+            S.remove(s)
+            Splus = min_generalizations(s, x)
+            ## keep only generalizations that have a counterpart in G
+            S.update([h for h in Splus if any([more_general(g,h) 
+                                               for g in G])])
+            ## remove hypotheses less specific than any other in S
+            S.difference_update([h for h in S if
+                                 any([more_general(h, h1)
+                                      for h1 in S if h != h1])]) 
+    return S
+def specialize_G(x, domains, G, S):
+    G_prev = list(G)
+    for g in G_prev:
+        if g not in G:
+            continue
+        if fulfills(x, g):
+            G.remove(g)
+            Gminus = min_specializations(g, domains, x)
+            ## keep only specializations that have a conuterpart in S
+            G.update([h for h in Gminus if any([more_general(h, s)
+                                                for s in S])])
+            ## remove hypotheses less general than any other in G
+            G.difference_update([h for h in G if
+                                 any([more_general(g1, h)
+                                      for g1 in G if h != g1])])
+    return G
+candidate_elimination(examples)
+
+
+P3.py
+
+import math
+import csv
+
+def load_csv(filename):
+    lines=csv.reader(open(filename,"r"));
+    dataset = list(lines)
+    headers = dataset.pop(0)
+    return dataset,headers
+
+class Node:
+    def __init__ (self,attribute):
+        self.attribute=attribute
+        self.children=[]
+        self.answer=""
+
+
+def subtables(data,col,delete):
+    dic={}
+    coldata=[row[col] for row in data]
+    attr=list(set(coldata))
+    counts=[0]*len(attr)
+    r=len(data)
+    c=len(data[0])
+    for x in range(len(attr)):
+        
+        for y in range(r):
+            if data[y][col]==attr[x]:
+                counts[x]+=1
+    for x in range(len(attr)):
+        dic[attr[x]]=[[0 for i in range(c)] for j in range(counts[x])]
+        pos=0
+        for y in range(r):
+            if data[y][col]==attr[x]:
+                if delete:
+                    del data[y][col]
+                dic[attr[x]][pos]=data[y]
+                pos+=1
+    return attr,dic
+
+def entropy(S):
+    attr=list(set(S))
+    if len(attr)==1:
+        return 0
+    counts=[0,0]
+    for i in range(2):
+        counts[i]=sum([1 for x in S if attr[i]==x])/(len(S)*1.0)
+    sums=0
+    for cnt in counts:
+        sums+=-1*cnt*math.log(cnt,2)
+    return sums
+
+def compute_gain(data,col):
+    attr,dic = subtables(data,col,delete=False)
+    total_size=len(data)
+    entropies=[0]*len(attr)
+    ratio=[0]*len(attr)
+    total_entropy=entropy([row[-1] for row in data])
+    for x in range(len(attr)):
+        ratio[x]=len(dic[attr[x]])/(total_size*1.0)
+        entropies[x]=entropy([row[-1] for row in dic[attr[x]]])
+
+        total_entropy-=ratio[x]*entropies[x]
+    return total_entropy
+
+def build_tree(data,features):
+    lastcol=[row[-1] for row in data]
+    if(len(set(lastcol)))==1:
+        node=Node("")
+        node.answer=lastcol[0]
+        return node
+    n=len(data[0])-1
+    gains=[0]*n
+    for col in range(n):
+        gains[col]=compute_gain(data,col)
+    split=gains.index(max(gains))
+    node=Node(features[split])
+    fea = features[:split]+features[split+1:]
+    attr,dic=subtables(data,split,delete=True)
+    for x in range(len(attr)):
+        child=build_tree(dic[attr[x]],fea)
+        node.children.append((attr[x],child))
+    return node
+
+def print_tree(node,level):
+    if node.answer!="":
+        print(" "*level,node.answer)
+        return
+    print(" "*level,node.attribute)
+    for value,n in node.children:
+        print(" "*(level+1),value)
+        print_tree(n,level+2)
+
+def classify(node,x_test,features):
+    if node.answer!="":
+        print(node.answer)
+        return
+    pos=features.index(node.attribute)
+    for value, n in node.children:
+        if x_test[pos]==value:
+            classify(n,x_test,features)
+
+
+dataset,features=load_csv("id3.csv")
+node1=build_tree(dataset,features)
+print("The decision tree for the dataset using ID3 algorithm is")
+print_tree(node1,0)
+testdata,features=load_csv("id3_test.csv")
+for xtest in testdata:
+    print("The test instance:",xtest)
+    print("The label for test instance:",end=" ")
+    classify(node1,xtest,features)
+
+
+P4.py
+
+import numpy as np
+X = np.array(([2, 9], [1, 5], [3, 6]), dtype=float)
+y = np.array(([92], [86], [89]), dtype=float)
+X = X/np.amax(X,axis=0) # maximum of X array longitudinally
+y = y/100
+
+#Sigmoid Function
+def sigmoid (x):
+    return 1/(1 + np.exp(-x))
+
+#Derivative of Sigmoid Function
+def derivatives_sigmoid(x):
+    return x * (1 - x)
+
+#Variable initialization
+epoch=5000 	#Setting training iterations
+lr=0.1 		#Setting learning rate
+inputlayer_neurons = 2 		#number of features in data set
+hiddenlayer_neurons = 3 	#number of hidden layers neurons
+output_neurons = 1 		#number of neurons at output layer
+
+#weight and bias initialization
+wh=np.random.uniform(size=(inputlayer_neurons,hiddenlayer_neurons))
+bh=np.random.uniform(size=(1,hiddenlayer_neurons))
+wout=np.random.uniform(size=(hiddenlayer_neurons,output_neurons))
+bout=np.random.uniform(size=(1,output_neurons))
+
+
+#draws a random range of numbers uniformly of dim x*y
+for i in range(epoch):
+
+#Forward Propogation
+    hinp1=np.dot(X,wh)
+    hinp=hinp1 + bh
+    hlayer_act = sigmoid(hinp)
+    outinp1=np.dot(hlayer_act,wout)
+    outinp= outinp1+ bout
+    output = sigmoid(outinp)
+
+#Backpropagation
+    EO = y-output
+    outgrad = derivatives_sigmoid(output)
+    d_output = EO* outgrad
+    EH = d_output.dot(wout.T)
+
+#how much hidden layer wts contributed to error
+    hiddengrad = derivatives_sigmoid(hlayer_act)
+    d_hiddenlayer = EH * hiddengrad
+
+# dotproduct of nextlayererror and currentlayerop
+wout += hlayer_act.T.dot(d_output) *lr
+wh += X.T.dot(d_hiddenlayer) *lr
+
+print("Input: \n" + str(X)) 
+print("Actual Output: \n" + str(y))
+print("Predicted Output: \n" ,output)
+  
+
+P5.py
+
+print("\nNaive Bayes Classifier for concept learning problem")
+import csv
+import random
+import math
+import operator
+def safe_div(x,y):
+    if y == 0:
+        return 0
+    return x / y
+
+# 1.Data Handling
+# 1.1 Loading the Data from csv file of ConceptLearning dataset.
+def loadCsv(filename):
+	lines = csv.reader(open(filename))
+	dataset = list(lines)
+	for i in range(len(dataset)):
+		dataset[i] = [float(x) for x in dataset[i]]
+	return dataset
+    
+#1.2 Splitting the Data set into Training Set 
+def splitDataset(dataset, splitRatio):
+	trainSize = int(len(dataset) * splitRatio)
+	trainSet = []
+	copy = list(dataset)
+	i=0
+	while len(trainSet) < trainSize:
+		#index = random.randrange(len(copy))
+		
+		trainSet.append(copy.pop(i))
+	return [trainSet, copy]
+    
+#2.Summarize Data
+#The naive bayes model is comprised of a 
+#summary of the data in the training dataset. 
+#This summary is then used when making predictions.
+#involves the mean and the standard deviation for each attribute, by class value
+
+#2.1: Separate Data By Class
+#Function to categorize the dataset in terms of classes 
+#The function assumes that the last attribute (-1) is the class value. 
+#The function returns a map of class values to lists of data instances. 
+def separateByClass(dataset):
+	separated = {}
+	for i in range(len(dataset)):
+		vector = dataset[i]
+		if (vector[-1] not in separated):
+			separated[vector[-1]] = []
+		separated[vector[-1]].append(vector)
+	return separated
+    
+#The mean is the central middle or central tendency of the data, 
+# and we will use it as the middle of our gaussian distribution 
+# when calculating probabilities
+
+#2.2 : Calculate Mean
+def mean(numbers):
+	return safe_div(sum(numbers),float(len(numbers)))
+    
+#The standard deviation describes the variation of spread of the data, 
+#and we will use it to characterize the expected spread of each attribute
+#in our Gaussian distribution when calculating probabilities.
+
+#2.3 : Calculate Standard Deviation	
+def stdev(numbers):
+	avg = mean(numbers)		
+	variance = safe_div(sum([pow(x-avg,2) for x in numbers]),float(len(numbers)-1))
+	return math.sqrt(variance)
+    
+#2.4 : Summarize Dataset
+#Summarize Data Set for a list of instances (for a class value) 
+#The zip function groups the values for each attribute across our data instances 
+#into their own lists so that we can compute the mean and standard deviation values 
+#for the attribute. 
+def summarize(dataset):
+	summaries = [(mean(attribute), stdev(attribute)) for attribute in zip(*dataset)]
+	del summaries[-1]
+	return summaries
+
+#2.5 : Summarize Attributes By Class
+#We can pull it all together by first separating our training dataset into 
+#instances grouped by class.Then calculate the summaries for each attribute.
+def summarizeByClass(dataset):
+	separated = separateByClass(dataset)
+	summaries = {}	
+	for classValue, instances in separated.items():		
+		summaries[classValue] = summarize(instances)
+	return summaries
+    
+#3.Make Prediction
+#3.1 Calculate Probaility Density Function
+def calculateProbability(x, mean, stdev):	
+	exponent = math.exp(-safe_div(math.pow(x-mean,2),(2*math.pow(stdev,2))))
+	final = safe_div(1 , (math.sqrt(2*math.pi) * stdev)) * exponent
+	return final
+    
+#3.2 Calculate Class Probabilities
+def calculateClassProbabilities(summaries, inputVector):
+	probabilities = {}
+	for classValue, classSummaries in summaries.items():
+		probabilities[classValue] = 1
+		for i in range(len(classSummaries)):
+			mean, stdev = classSummaries[i]			
+			x = inputVector[i]
+			probabilities[classValue] *= calculateProbability(x, mean, stdev)
+	return probabilities
+    
+#3.3 Prediction : look for the largest probability and return the associated class			
+def predict(summaries, inputVector):
+	probabilities = calculateClassProbabilities(summaries, inputVector)
+	bestLabel, bestProb = None, -1
+	for classValue, probability in probabilities.items():
+		if bestLabel is None or probability > bestProb:
+			bestProb = probability
+			bestLabel = classValue
+	return bestLabel
+    
+#4.Make Predictions
+# Function which return predictions for list of predictions
+# For each instance
+def getPredictions(summaries, testSet):
+	predictions = []
+	for i in range(len(testSet)):
+		result = predict(summaries, testSet[i])
+		predictions.append(result)
+	return predictions
+    
+#5. Computing Accuracy 
+def getAccuracy(testSet, predictions):
+	correct = 0
+	for i in range(len(testSet)):
+		if testSet[i][-1] == predictions[i]:
+			correct += 1
+	accuracy = safe_div(correct,float(len(testSet))) * 100.0
+	return accuracy
+ 
+def main():
+	filename = 'ConceptLearning.csv'
+	splitRatio = 0.90
+	dataset = loadCsv(filename)
+	trainingSet, testSet = splitDataset(dataset, splitRatio)
+	print('Split {0} rows into'.format(len(dataset)))
+	print('Number of Training data: ' + (repr(len(trainingSet))))
+	print('Number of Test Data: ' + (repr(len(testSet))))
+	print("\nThe values assumed for the concept learning attributes are\n")
+	print("OUTLOOK=> Sunny=1 Overcast=2 Rain=3\nTEMPERATURE=> Hot=1 Mild=2 Cool=3\nHUMIDITY=> High=1 Normal=2\nWIND=> Weak=1 Strong=2")
+	print("TARGET CONCEPT:PLAY TENNIS=> Yes=10 No=5")
+	print("\nThe Training set are:")
+	for x in trainingSet:
+		print(x)
+	print("\nThe Test data set are:")
+	for x in testSet:
+		print(x)
+	print("\n")
+	# prepare model
+	summaries = summarizeByClass(trainingSet)
+	# test model
+	predictions = getPredictions(summaries, testSet)
+	actual = []
+	for i in range(len(testSet)):
+		vector = testSet[i]
+		actual.append(vector[-1])
+	# Since there are five attribute values, each attribute constitutes to 20% accuracy. So if all attributes match with predictions then 100% accuracy
+	print('Actual values: {0}%'.format(actual))	
+	print('Predictions: {0}%'.format(predictions))
+	accuracy = getAccuracy(testSet, predictions)
+	print('Accuracy: {0}%'.format(accuracy))
+ 
+main()
+
+
+P6.py
+
+
+from sklearn.datasets import fetch_20newsgroups
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+import numpy as np
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+
+twenty_train = fetch_20newsgroups(subset='train',shuffle=True)
+print(twenty_train)
+
+categories = twenty_train.target_names[:4]
+print(categories)
+twenty_train = fetch_20newsgroups(subset='train',categories=categories,shuffle=True)
+twenty_test = fetch_20newsgroups(subset='test',categories=categories,shuffle=True)
+
+tfidf_transformer = CountVectorizer()
+X_train_tfidf = tfidf_transformer.fit_transform(twenty_train.data)
+
+mod = MultinomialNB()
+mod.fit(X_train_tfidf, twenty_train.target)
+
+X_test_tfidf = tfidf_transformer.transform(twenty_test.data)
+predicted = mod.predict(X_test_tfidf)
+
+print("Accuracy:", accuracy_score(twenty_test.target, predicted)*100)
+print(classification_report(twenty_test.target,predicted,target_names=twenty_test.target_names))
+print("confusion matrix is \n",confusion_matrix(twenty_test.target, predicted))
+
+
+P7.py
+
+import numpy as np
+from urllib.request import urlopen
+import pandas as pd
+from pgmpy.models import BayesianModel
+from pgmpy.estimators import MaximumLikelihoodEstimator
+from pgmpy.inference import VariableElimination
+
+URL = 'http://archive.ics.uci.edu/ml/machine-learning-databases/heart-disease/processed.hungarian.data'
+names = ['a','b','c','d','e','f','g','h','i','j','k','l','m','n']
+
+heartDisease = pd.read_csv(urlopen(URL), names = names) 
+print(heartDisease.head())
+
+del heartDisease['k']
+del heartDisease['l']
+del heartDisease['m']
+del heartDisease['j']
+
+
+heartDisease = heartDisease.replace('?', np.nan)
+model = BayesianModel([('a','b'),('c','d'),('e','f'),('g','h'),('i','n')])
+
+model.fit(heartDisease, estimator=MaximumLikelihoodEstimator)
+model.get_independencies()
+HeartDisease_infer = VariableElimination(model)
+
+q = HeartDisease_infer.query(variables=['n'], evidence={'a': 28})
+print(q)
+q = HeartDisease_infer.query(variables=['n'], evidence={'a': 50})
+print(q)
+
+P8.py
+
+import matplotlib.pyplot as plt
+from sklearn import datasets
+from sklearn.cluster import KMeans
+import sklearn.metrics as sm
+import pandas as pd
+import numpy as np
+#%matplotlib inline
+
+l1 = [0,1,2]
+
+def rename(s):
+	l2 = []
+	for i in s:
+		if i not in l2:
+			l2.append(i)
+
+	for i in range(len(s)):
+		pos = l2.index(s[i])
+		s[i] = l1[pos]
+	
+	return s
+
+	
+# importing iris dataset 
+iris = datasets.load_iris()
+print("\n IRIS DATA :",iris.data);
+print("\n IRIS FEATURES :\n",iris.feature_names) 
+print("\n IRIS TARGET  :\n",iris.target) 
+print("\n IRIS TARGET NAMES:\n",iris.target_names)
+
+
+
+# Store the inputs as a Pandas Dataframe and set the column names
+X = pd.DataFrame(iris.data)
+print(X)
+
+#naming the columns
+X.columns = ['Sepal_Length','Sepal_Width','Petal_Length','Petal_Width']
+print(X.columns)
+
+#loading the target  from iris dataset to Y and naming the column as target
+y = pd.DataFrame(iris.target)
+y.columns = ['Targets']
+print("Y:",y)
+
+# Set the size of the plot
+plt.figure(figsize=(14,7))
+
+# Create a colormap
+colormap = np.array(['red', 'lime', 'black'])
+
+# Plot Sepal
+plt.subplot(1, 2, 1)
+plt.scatter(X.Sepal_Length,X.Sepal_Width, c=colormap[y.Targets], s=40)
+plt.title('Sepal')
+
+# Plot petal
+plt.subplot(1, 2, 2)
+plt.scatter(X.Petal_Length,X.Petal_Width, c=colormap[y.Targets], s=40)
+plt.title('Petal')
+plt.show()
+
+print("Actual Target is:\n", iris.target)
+
+# K Means Cluster
+model = KMeans(n_clusters=3)
+print(model)
+model.fit(X)
+
+# Set the size of the plot
+plt.figure(figsize=(14,7))
+
+# Create a colormap
+colormap = np.array(['red', 'lime', 'black'])
+
+# Plot the Original Classifications
+plt.subplot(1, 2, 1)
+plt.scatter(X.Petal_Length, X.Petal_Width, c=colormap[y.Targets], s=40)
+plt.title('Real Classification')
+plt.show()
+
+# Plot the Models Classifications
+plt.subplot(1, 2, 2)
+plt.scatter(X.Petal_Length, X.Petal_Width, c=colormap[model.labels_], s=40)
+plt.title('K Mean Classification')
+plt.show()
+
+km = rename(model.labels_)
+print(km)
+print("\nWhat KMeans thought: \n", km)
+print("Accuracy of KMeans is ",sm.accuracy_score(y, km))
+print("Confusion Matrix for KMeans is \n",sm.confusion_matrix(y, km))
+
+from sklearn import preprocessing
+scaler = preprocessing.StandardScaler()
+scaler.fit(X)
+xsa = scaler.transform(X)
+xs = pd.DataFrame(xsa, columns = X.columns)
+print("\n",xs.sample(5))
+
+from sklearn.mixture import GaussianMixture
+gmm = GaussianMixture(n_components=3)
+gmm.fit(xs)
+
+y_cluster_gmm = gmm.predict(xs)
+
+plt.subplot(1, 2, 1)
+plt.scatter(X.Petal_Length, X.Petal_Width, c=colormap[y_cluster_gmm], s=40)
+plt.title('GMM Classification')
+plt.show()
+
+em = rename(y_cluster_gmm)
+print("\nWhat EM thought: \n", em)
+print("Accuracy of EM is ",sm.accuracy_score(y, em))
+print("Confusion Matrix for EM is \n", sm.confusion_matrix(y, em))
+
+
+P9.py
+
+# Python program to demonstrate # KNN classification algorithm # on IRISdataset
+
+from sklearn.datasets import load_iris
+from sklearn.neighbors import KNeighborsClassifier
+import numpy as np
+from sklearn.model_selection import train_test_split
+iris_dataset=load_iris()
+
+print("\n IRIS FEATURES \ TARGET NAMES: \n ", iris_dataset.target_names)
+for i in range(len(iris_dataset.target_names)):
+    print("\n[{0}]:[{1}]".format(i,iris_dataset.target_names[i]))
+
+print("\n IRIS DATA :\n",iris_dataset["data"])
+
+X_train, X_test, y_train, y_test = train_test_split(iris_dataset["data"], iris_dataset["target"], random_state=0)
+
+print("\n Target :\n",iris_dataset["target"])
+print("\n X TRAIN \n", X_train)
+print("\n X TEST \n", X_test)
+print("\n Y TRAIN \n", y_train)
+print("\n Y TEST \n", y_test)
+kn = KNeighborsClassifier(n_neighbors=1)
+kn.fit(X_train, y_train)
+
+x_new = np.array([[5, 2.9, 1, 0.2]])
+print("\n XNEW \n",x_new)
+
+prediction = kn.predict(x_new)
+
+print("\n Predicted target value: {}\n".format(prediction))
+print("\n Predicted feature name: {}\n".format
+(iris_dataset["target_names"][prediction]))
+
+i=1
+x= X_test[i]
+x_new = np.array([x])
+print("\n XNEW \n",x_new)
+
+for i in range(len(X_test)): x = X_test[i]
+x_new = np.array([x])
+prediction = kn.predict(x_new)
+print("\n Actual : {0} {1}, Predicted :{2}{3}".format(y_test[i],iris_dataset["target_names"][y_test[i]],prediction,iris_dataset["target_names"][ prediction]))
+
+print("\n TEST SCORE[ACCURACY]: {:.2f}\n".format(kn.score(X_test, y_test))
+)
+
+P10.py
+
+import numpy as np
+from bokeh.plotting import figure, show, output_notebook
+from bokeh.layouts import gridplot
+from bokeh.io import push_notebook
+
+#output_notebook()
+import numpy as np
+
+def local_regression(x0, X, Y, tau):
+    # add bias term
+    x0 = np.r_[1, x0] # Add one to avoid the loss in information 
+    X = np.c_[np.ones(len(X)), X]   
+       
+    # fit model: normal equations with kernel
+    xw = X.T * radial_kernel(x0, X, tau)   # XTranspose * W
+    
+    beta = np.linalg.pinv(xw @ X) @ xw @ Y   # @ Matrix Multiplication or Dot Product  
+        
+    # predict value
+    return x0 @ beta    # @ Matrix Multiplication or Dot Product for prediction 
+
+def radial_kernel(x0, X, tau):
+    return np.exp(np.sum((X - x0) ** 2, axis=1) / (-2 * tau * tau))   # Weight or Radial Kernal Bias Function
+
+n = 1000
+# generate dataset
+X = np.linspace(-3, 3, num=n)
+print("The Data Set ( 10 Samples) X :\n",X[1:10])
+Y = np.log(np.abs(X ** 2 - 1) + .5)
+print("The Fitting Curve Data Set (10 Samples) Y  :\n",Y[1:10])
+# jitter X
+X += np.random.normal(scale=.1, size=n)
+print("Normalised (10 Samples) X :\n",X[1:10])
+
+domain = np.linspace(-3, 3, num=300)
+print(" Xo Domain Space(10 Samples)  :\n",domain[1:10])
+
+def plot_lwr(tau):
+    # prediction through regression
+    prediction = [local_regression(x0, X, Y, tau) for x0 in domain]
+    plot = figure(plot_width=400, plot_height=400)
+    plot.title.text='tau=%g' % tau
+    plot.scatter(X, Y, alpha=.3)
+    plot.line(domain, prediction, line_width=2, color='red')
+    return plot
+# Plotting the curves with different tau
+show(gridplot([
+    [plot_lwr(10.), plot_lwr(1.)],
+    [plot_lwr(0.1), plot_lwr(0.01)]
+]))
